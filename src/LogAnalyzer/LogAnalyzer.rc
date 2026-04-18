@@ -1,0 +1,35 @@
+#include "resource.h"
+#include <windows.h>
+
+IDD_LOG_ANALYZER_DIALOG DIALOGEX 0, 0, 400, 550
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    LTEXT           "Folder Path:",IDC_STATIC,10,10,50,10
+    EDITTEXT        1001,65,8,250,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse",1002,320,7,70,16
+    
+    LTEXT           "Regex Pattern:",IDC_STATIC,10,30,50,10
+    EDITTEXT        1003,65,28,325,14,ES_AUTOHSCROLL
+    
+    LTEXT           "Timestamp Format:",IDC_STATIC,10,50,70,10
+    EDITTEXT        1004,85,48,305,14,ES_AUTOHSCROLL
+    
+    CONTROL         "Recursive",1005,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,70,60,10
+    
+    PUSHBUTTON      "Process Logs",1006,10,90,100,20
+    
+    GROUPBOX        "Filters",IDC_STATIC,10,120,380,80
+    LTEXT           "Log Level:",IDC_STATIC,20,140,40,10
+    COMBOBOX        1007,65,138,100,100,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    
+    LTEXT           "Keywords:",IDC_STATIC,20,165,40,10
+    EDITTEXT        1008,65,163,250,14,ES_AUTOHSCROLL
+    
+    PUSHBUTTON      "Apply Filter",1009,20,180,100,20
+    
+    LTEXT           "Results:",IDC_STATIC,10,210,40,10
+    EDITTEXT        1010,10,225,380,250,ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL
+    
+    LTEXT           "Ready",1011,10,485,380,10
+END

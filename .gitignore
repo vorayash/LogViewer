@@ -1,0 +1,95 @@
+# Visual Studio build outputs
+*.sdf
+*.sln
+*.suo
+*.user
+*.aps
+*.opensdf
+*.db
+*.opendb
+*.ipch
+*.idb
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.log
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+*.recipe
+
+# Build directories
+bin/
+bin64/
+arm64/
+vs.proj/Debug/
+vs.proj/Release/
+vs.proj/x64/
+vs.proj/ARM64/
+vs.proj/NppPlugi.*/
+vs.proj/.vs/
+
+# Visual Studio cache/options
+.vs/
+*.vcxproj.user
+*.vcxproj.filters
+
+# Compiled outputs
+*.dll
+*.exe
+*.obj
+*.res
+
+# Backup and temporary files
+*.bak
+*.tmp
+*.temp
+*~
+*.swp
+*.swo
+
+# Archives
+*.zip
+*.7z
+*.rar
+*.tar.gz
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDE specific
+.vscode/
+.idea/
+*.code-workspace
+
+# Documentation build outputs (if using Doxygen, etc.)
+docs/html/
+docs/latex/
+
+# Test logs and outputs
+test_logs/
+*.test.log
+
+# ============================================
+# FOLDERS TO EXCLUDE FROM VERSION CONTROL
+# ============================================
+# 
+# vs.proj/Debug/          - Debug build outputs
+# vs.proj/Release/        - Release build outputs  
+# vs.proj/x64/            - x64 platform builds
+# vs.proj/ARM64/          - ARM64 platform builds
+# vs.proj/.vs/            - Visual Studio cache
+# vs.proj/NppPlugi.*/     - Intermediate build files
+# bin/                    - 32-bit release output
+# bin64/                  - 64-bit release output
+# arm64/                  - ARM64 release output
+# .vscode/                - VS Code settings (optional)
+# .vs/                    - Visual Studio settings
