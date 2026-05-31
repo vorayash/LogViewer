@@ -7,7 +7,6 @@
 #include "IndexEngine.h"
 #include "FilterEngine.h"
 #include "PatternAnalyzer.h"
-#include "ExceptionDetector.h"
 #include <vector>
 #include <string>
 #include <functional>
@@ -38,13 +37,12 @@ public:
     std::vector<int>     filterLogs  (const FilterCriteria& criteria);
     AggregationResult    aggregate   (const std::vector<int>& indices);
 
-    void analyzePatterns  (const std::vector<int>& indices);
-    void analyzeExceptions(const std::vector<int>& indices);
+    void analyzePatterns  (const std::vector<int>& indices,
+                           PatternAnalyzer::ProgressFn progress = nullptr);
 
     // ── Accessors ────────────────────────────────────────────────────────────
     const std::vector<LogEntry>&    getLogs      () const { return m_logs; }
     const std::vector<LogPattern>&  getPatterns  () const { return m_patterns; }
-    const std::vector<LogException>& getExceptions() const { return m_exceptions; }
     int  getTotalLogCount() const { return (int)m_logs.size(); }
     std::string getLastError() const { return m_lastError; }
 
@@ -55,14 +53,12 @@ private:
     LogConfig        m_config;
     std::vector<LogEntry>     m_logs;
     std::vector<LogPattern>   m_patterns;
-    std::vector<LogException> m_exceptions;
 
     FileReader      m_fileReader;
     LogParser       m_parser;
     IndexEngine     m_indexEngine;
     FilterEngine    m_filterEngine;
     PatternAnalyzer m_patternAnalyzer;
-    ExceptionDetector m_exceptionDetector;
 
     int         m_bucketSize = 3600;
     std::string m_lastError;

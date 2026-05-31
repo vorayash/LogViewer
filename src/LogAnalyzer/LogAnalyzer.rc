@@ -16,52 +16,51 @@ BEGIN
     LTEXT           "Regex:",IDC_STATIC,            4, 22, 32,  9
     EDITTEXT        1003,                           38, 20,396, 13, ES_AUTOHSCROLL
 
-    // ── Row 3 – Timestamp / Recursive / Bucket / Process ─────────────────
-    LTEXT           "Timestamp:",IDC_STATIC,        4, 39, 46,  9
-    EDITTEXT        1004,                           52, 37,140, 13, ES_AUTOHSCROLL
+    // ── Row 3 – File mask / Recursive ─────────────────────────────────────
+    LTEXT           "Files:",IDC_STATIC,            4, 39, 32,  9
+    EDITTEXT        1016,                           38, 37,150, 13, ES_AUTOHSCROLL
     CONTROL         "Recursive",1005,"Button",BS_AUTOCHECKBOX|WS_TABSTOP,
-                                                  198, 39, 58, 10
-    LTEXT           "Bucket:",IDC_STATIC,          260, 39, 32,  9
-    EDITTEXT        1013,                          294, 37, 30, 13, ES_AUTOHSCROLL|ES_NUMBER
-    COMBOBOX        1012,                          326, 36, 60, 80, CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP
-    PUSHBUTTON      "Process",1006,               390, 35, 46, 16
+                                                  198, 39, 70, 10
 
-    // ── Row 4 – Search / Level / Filter ──────────────────────────────────
-    LTEXT           "Search:",IDC_STATIC,           4, 57, 32,  9
-    EDITTEXT        1014,                           38, 55,190, 13, ES_AUTOHSCROLL
+    // ── Row 4 – Timestamp / Bucket / Process ─────────────────────────────
+    LTEXT           "Timestamp:",IDC_STATIC,        4, 56, 46,  9
+    EDITTEXT        1004,                           52, 54,140, 13, ES_AUTOHSCROLL
+    LTEXT           "Bucket:",IDC_STATIC,          260, 56, 32,  9
+    EDITTEXT        1013,                          294, 54, 30, 13, ES_AUTOHSCROLL|ES_NUMBER
+    COMBOBOX        1012,                          326, 53, 60, 80, CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP
+    PUSHBUTTON      "Process",1006,               390, 52, 46, 16
+
+    // ── Row 5 – Search / Level / Filter ──────────────────────────────────
+    LTEXT           "Search:",IDC_STATIC,           4, 74, 32,  9
+    EDITTEXT        1014,                           38, 72,190, 13, ES_AUTOHSCROLL
     CONTROL         "Regex",1015,"Button",BS_AUTOCHECKBOX|WS_TABSTOP,
-                                                  232, 57, 36, 10
-    LTEXT           "Level:",IDC_STATIC,           272, 57, 28,  9
-    COMBOBOX        1007,                          302, 55, 88, 80, CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP
-    PUSHBUTTON      "Filter",1009,                394, 54, 42, 16
+                                                  232, 74, 36, 10
+    LTEXT           "Level:",IDC_STATIC,           272, 74, 28,  9
+    COMBOBOX        1007,                          302, 72, 88, 80, CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP
+    PUSHBUTTON      "Filter",1009,                394, 71, 42, 16
 
-    // ── Row 5 – Keywords ─────────────────────────────────────────────────
-    LTEXT           "Keywords:",IDC_STATIC,         4, 74, 42,  9
-    EDITTEXT        1008,                           48, 72,388, 13, ES_AUTOHSCROLL
+    // ── Row 6 – Keywords ─────────────────────────────────────────────────
+    LTEXT           "Keywords:",IDC_STATIC,         4, 91, 42,  9
+    EDITTEXT        1008,                           48, 89,388, 13, ES_AUTOHSCROLL
 
     // ── Histogram (custom GDI control) ────────────────────────────────────
-    LTEXT           "Timeline",IDC_STATIC,          4, 90, 36,  9
+    LTEXT           "Timeline",IDC_STATIC,          4,107, 36,  9
     CONTROL         "",1017,"LogAnalyzerHistogram",WS_CHILD|WS_VISIBLE|WS_BORDER,
-                                                    4,100,432,100
+                                                    4,117,432,100
 
     // ── Tab control ───────────────────────────────────────────────────────
     CONTROL         "",1018,"SysTabControl32",TCS_FIXEDWIDTH|WS_TABSTOP,
-                                                    4,205,432, 18
+                                                    4,222,432, 18
 
     // ── Logs list (virtual / LVS_OWNERDATA) ──────────────────────────────
     CONTROL         "",1010,"SysListView32",
                     LVS_REPORT|LVS_OWNERDATA|LVS_SHOWSELALWAYS|LVS_SINGLESEL|WS_BORDER|WS_TABSTOP,
-                    4,223,432,440
+                    4,240,432,420
 
     // ── Patterns list (hidden by default) ────────────────────────────────
     CONTROL         "",1019,"SysListView32",
                     LVS_REPORT|LVS_SHOWSELALWAYS|LVS_SINGLESEL|WS_BORDER|WS_TABSTOP,
-                    4,223,432,440
-
-    // ── Exceptions list (hidden by default) ──────────────────────────────
-    CONTROL         "",1020,"SysListView32",
-                    LVS_REPORT|LVS_SHOWSELALWAYS|LVS_SINGLESEL|WS_BORDER|WS_TABSTOP,
-                    4,223,432,440
+                    4,240,432,420
 
     // ── Status bar ────────────────────────────────────────────────────────
     LTEXT           "Ready",1011,4,667,432,9

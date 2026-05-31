@@ -75,17 +75,6 @@ struct LogPattern {
     std::vector<int> logIndices;
 };
 
-// A detected exception / stack-trace group (output of ExceptionDetector)
-struct LogException {
-    std::string exceptionType; // e.g. "NullPointerException"
-    std::string message;       // exception message
-    std::string stackTrace;    // first full trace seen
-    int         count     = 0;
-    time_t      firstSeen = 0;
-    time_t      lastSeen  = 0;
-    std::vector<int> logIndices;
-};
-
 // Multi-dimensional indexes built by IndexEngine
 struct LogIndexes {
     std::unordered_map<int, std::vector<int>>         levelIndex;
@@ -103,6 +92,8 @@ struct LogConfig {
     std::string folderPath;
     std::string regexPattern;
     std::string timestampFormat;
+    // Filename mask(s), e.g. "*.txt" or "*.log;*.txt". Empty = all files.
+    std::string fileFilter   = "*.log;*.txt;*.out";
     bool recursive           = false;
     int  timestampGroupIndex = 1;
     int  levelGroupIndex     = 2;

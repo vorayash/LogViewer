@@ -31,7 +31,8 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 		switch (reasonForCall)
 		{
 			case DLL_PROCESS_ATTACH: {
-				INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES };
+				INITCOMMONCONTROLSEX icc = { sizeof(icc),
+					ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES | ICC_PROGRESS_CLASS };
 				InitCommonControlsEx(&icc);
 				LogAnalyzer::HistogramControl::registerClass((HINSTANCE)hModule);
 				pluginInit(hModule);

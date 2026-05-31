@@ -46,7 +46,6 @@
     <ClInclude Include="..\src\LogAnalyzer\resource.h" />
     <ClInclude Include="..\src\LogAnalyzer\Tokenizer.h" />
     <ClInclude Include="..\src\LogAnalyzer\PatternAnalyzer.h" />
-    <ClInclude Include="..\src\LogAnalyzer\ExceptionDetector.h" />
     <ClInclude Include="..\src\LogAnalyzer\HistogramControl.h" />
     <ClInclude Include="..\src\menuCmdID.h" />
     <ClInclude Include="..\src\Notepad_plus_msgs.h" />
@@ -68,7 +67,6 @@
     <ClCompile Include="..\src\LogAnalyzer\LogParser.cpp" />
     <ClCompile Include="..\src\LogAnalyzer\Tokenizer.cpp" />
     <ClCompile Include="..\src\LogAnalyzer\PatternAnalyzer.cpp" />
-    <ClCompile Include="..\src\LogAnalyzer\ExceptionDetector.cpp" />
     <ClCompile Include="..\src\LogAnalyzer\HistogramControl.cpp" />
     <ClCompile Include="..\src\NppPluginDemo.cpp" />
     <ClCompile Include="..\src\PluginDefinition.cpp" />

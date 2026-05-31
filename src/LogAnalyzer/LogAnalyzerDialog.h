@@ -43,20 +43,24 @@ private:
         IDC_BUCKET_VALUE   = 1013,
         IDC_SEARCH_EDIT    = 1014,
         IDC_SEARCH_REGEX   = 1015,
+        IDC_FILE_FILTER    = 1016,
         IDC_HISTOGRAM      = 1017,
         IDC_TABS           = 1018,
         IDC_PATTERNS_LIST  = 1019,
-        IDC_EXCEPTIONS_LIST= 1020,
     };
 
     // ── Core & state ────────────────────────────────────────────────────────
     LogAnalyzerCore  m_core;
     std::vector<int> m_filteredIndices;
     AggregationResult m_aggregation;
-    bool             m_chartWindowOpened = false;
     bool             m_processing        = false;
 
-    // Active tab: 0=Logs, 1=Patterns, 2=Exceptions
+    // Background analysis (filter + aggregate + patterns + exceptions)
+    HANDLE           m_hAnalyzeThread    = nullptr;
+    volatile bool    m_analyzing         = false;
+    FilterCriteria   m_pendingCriteria;
+
+    // Active tab: 0=Logs, 1=Patterns
     int  m_activeTab   = 0;
 
     // Sort state for logs list
@@ -70,6 +74,7 @@ private:
     HWND m_hFolder, m_hBrowse;
     HWND m_hRegex,  m_hTsFmt;
     HWND m_hRecursive, m_hProcess;
+    HWND m_hFileFilter;
     HWND m_hBucketUnit, m_hBucketVal;
     HWND m_hSearch, m_hSearchRegex;
     HWND m_hLevelCombo, m_hKeywords, m_hFilter;
@@ -77,14 +82,14 @@ private:
     HWND m_hTabs;
     HWND m_hLogsList;
     HWND m_hPatternsList;
-    HWND m_hExceptionsList;
     HWND m_hStatus;
+    HWND m_hProgress      = nullptr;  // determinate progress bar (created dynamically)
+    HWND m_hProgressLabel = nullptr;  // "47% - Reading..." centered above the bar
 
     // ── Setup ────────────────────────────────────────────────────────────────
     void createControls();
     void setupLogsColumns();
     void setupPatternsColumns();
-    void setupExceptionsColumns();
 
     // ── Event handlers ───────────────────────────────────────────────────────
     void onBrowse();
@@ -94,15 +99,16 @@ private:
     void onHistogramRange();
     void onLogsDoubleClick(int itemIdx);
     void onPatternsDoubleClick(int itemIdx);
-    void onExceptionsDoubleClick(int itemIdx);
     void onColumnClick(int col);
     void onContextMenu(HWND hList, POINT pt);
 
     // ── Data display ─────────────────────────────────────────────────────────
-    void applyFilter();
+    void startAnalyze();          // build criteria + kick off worker
+    void analyzeWorkerBody();     // runs on background thread
+    void onAnalyzeDone();         // UI-thread completion handler
+    void setBusy(bool busy, const std::string& msg = "");
     void refreshLogsVirtualList();
     void populatePatternsTab();
-    void populateExceptionsTab();
     void updateHistogram();
     void updateStatus();
 
@@ -113,10 +119,6 @@ private:
     // ── Detail popup ─────────────────────────────────────────────────────────
     void showDetailDialog(int logIdx);
     void showPatternDetail(int patIdx);
-    void showExceptionDetail(int exIdx);
-
-    // ── Chart (browser) ──────────────────────────────────────────────────────
-    void generateBrowserChart();
 
     // ── Layout ───────────────────────────────────────────────────────────────
     void onResize(int W, int H);
@@ -132,9 +134,15 @@ private:
     static std::string levelName(int lvl);
     static COLORREF    levelRowColor(int lvl);
     static std::string fmtTime(time_t t);
+
+    static DWORD WINAPI analyzeThreadProc(LPVOID param);
 };
 
 } // namespace LogAnalyzer
+
+// UI messages posted from worker threads
+#define WM_LA_PROGRESS  (WM_APP + 11)   // lParam = std::string* status text
+#define WM_LA_ANALYZED  (WM_APP + 12)   // analysis worker finished
 
 #endif // LOG_ANALYZER_DIALOG_H
 

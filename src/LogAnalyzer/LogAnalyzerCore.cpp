@@ -16,7 +16,6 @@ LogAnalyzerCore::~LogAnalyzerCore() {
 void LogAnalyzerCore::clear() {
     m_logs.clear();
     m_patterns.clear();
-    m_exceptions.clear();
     m_indexEngine.clear();
     m_lastError.clear();
 }
@@ -56,21 +55,32 @@ bool LogAnalyzerCore::processLogs(ProgressCallback cb) {
 
     if (cb) cb(0, "Reading log files...");
 
-    auto callback = [this](const std::string& line, int n, const std::string& f) {
+    m_fileReader.setFileFilter(m_config.fileFilter);
+
+    auto lineCb = [this](const std::string& line, int n, const std::string& f) {
         return processLine(line, n, f);
     };
 
-    if (!m_fileReader.readFolder(m_config.folderPath, m_config.recursive, callback)) {
+    // Map byte-read progress onto 0-85% of the overall pipeline.
+    FileReader::ProgressCallback progCb = nullptr;
+    if (cb) {
+        progCb = [cb](unsigned long long read, unsigned long long total) {
+            int pct = total > 0 ? (int)((read * 85ULL) / total) : 0;
+            cb(pct, "Reading & parsing logs...");
+        };
+    }
+
+    if (!m_fileReader.readFolder(m_config.folderPath, m_config.recursive, lineCb, progCb)) {
         m_lastError = "Failed to read logs: " + m_fileReader.getLastError();
         return false;
     }
 
     if (m_logs.empty()) { m_lastError = "No log lines matched the pattern"; return false; }
 
-    if (cb) cb(80, "Building indexes...");
+    if (cb) cb(90, "Building indexes...");
     m_indexEngine.buildIndexes(m_logs);
 
-    if (cb) cb(100, "Done");
+    if (cb) cb(100, "Indexed");
     return true;
 }
 
@@ -110,12 +120,9 @@ AggregationResult LogAnalyzerCore::aggregate(const std::vector<int>& indices) {
     return m_filterEngine.aggregate(m_logs, indices, m_bucketSize);
 }
 
-void LogAnalyzerCore::analyzePatterns(const std::vector<int>& indices) {
-    m_patterns = m_patternAnalyzer.analyze(m_logs, indices);
-}
-
-void LogAnalyzerCore::analyzeExceptions(const std::vector<int>& indices) {
-    m_exceptions = m_exceptionDetector.detect(m_logs, indices);
+void LogAnalyzerCore::analyzePatterns(const std::vector<int>& indices,
+                                      PatternAnalyzer::ProgressFn progress) {
+    m_patterns = m_patternAnalyzer.analyze(m_logs, indices, progress);
 }
 
 } // namespace LogAnalyzer

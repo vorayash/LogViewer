@@ -1,7 +1,5 @@
 #define NOMINMAX
 #include "LogAnalyzerDialog.h"
-#include "ChartTemplate.h"
-#include "ChartGenerator.h"
 #include <shlobj.h>
 #include <sstream>
 #include <iomanip>
@@ -50,15 +48,23 @@ LogAnalyzerDialog::LogAnalyzerDialog()
     , m_hFolder(nullptr), m_hBrowse(nullptr)
     , m_hRegex(nullptr), m_hTsFmt(nullptr)
     , m_hRecursive(nullptr), m_hProcess(nullptr)
+    , m_hFileFilter(nullptr)
     , m_hBucketUnit(nullptr), m_hBucketVal(nullptr)
     , m_hSearch(nullptr), m_hSearchRegex(nullptr)
     , m_hLevelCombo(nullptr), m_hKeywords(nullptr), m_hFilter(nullptr)
     , m_hHistogram(nullptr), m_hTabs(nullptr)
-    , m_hLogsList(nullptr), m_hPatternsList(nullptr), m_hExceptionsList(nullptr)
+    , m_hLogsList(nullptr), m_hPatternsList(nullptr)
     , m_hStatus(nullptr) {
 }
 
-LogAnalyzerDialog::~LogAnalyzerDialog() {}
+LogAnalyzerDialog::~LogAnalyzerDialog() {
+    // Make sure the analysis worker has finished before we tear down.
+    if (m_hAnalyzeThread) {
+        WaitForSingleObject(m_hAnalyzeThread, 5000);
+        CloseHandle(m_hAnalyzeThread);
+        m_hAnalyzeThread = nullptr;
+    }
+}
 
 void LogAnalyzerDialog::init(HINSTANCE hInst, HWND parent) {
     _hInst = hInst; _hParent = parent;
@@ -107,10 +113,11 @@ int LogAnalyzerDialog::getBucketSeconds() const {
 void LogAnalyzerDialog::showListView(int tab) {
     ShowWindow(m_hLogsList,       tab == 0 ? SW_SHOW : SW_HIDE);
     ShowWindow(m_hPatternsList,   tab == 1 ? SW_SHOW : SW_HIDE);
-    ShowWindow(m_hExceptionsList, tab == 2 ? SW_SHOW : SW_HIDE);
 }
 
 // ── Control setup ─────────────────────────────────────────────────────────────
+
+static LRESULT CALLBACK ListWhiteBkSubclass(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 
 void LogAnalyzerDialog::createControls() {
     m_hFolder      = GetDlgItem(_hSelf, IDC_FOLDER_PATH);
@@ -118,6 +125,7 @@ void LogAnalyzerDialog::createControls() {
     m_hRegex       = GetDlgItem(_hSelf, IDC_REGEX_PATTERN);
     m_hTsFmt       = GetDlgItem(_hSelf, IDC_TIMESTAMP_FMT);
     m_hRecursive   = GetDlgItem(_hSelf, IDC_RECURSIVE);
+    m_hFileFilter  = GetDlgItem(_hSelf, IDC_FILE_FILTER);
     m_hProcess     = GetDlgItem(_hSelf, IDC_PROCESS);
     m_hBucketUnit  = GetDlgItem(_hSelf, IDC_BUCKET_UNIT);
     m_hBucketVal   = GetDlgItem(_hSelf, IDC_BUCKET_VALUE);
@@ -130,12 +138,12 @@ void LogAnalyzerDialog::createControls() {
     m_hTabs        = GetDlgItem(_hSelf, IDC_TABS);
     m_hLogsList    = GetDlgItem(_hSelf, IDC_LOGS_LIST);
     m_hPatternsList    = GetDlgItem(_hSelf, IDC_PATTERNS_LIST);
-    m_hExceptionsList  = GetDlgItem(_hSelf, IDC_EXCEPTIONS_LIST);
     m_hStatus      = GetDlgItem(_hSelf, IDC_STATUS);
 
     // Defaults
     setCtrlText(m_hRegex, "(\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}).*?\\s(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\\s+(.*)");
     setCtrlText(m_hTsFmt, "%Y-%m-%d %H:%M:%S");
+    setCtrlText(m_hFileFilter, "*.log;*.txt;*.out");
 
     SendMessageA(m_hBucketUnit, CB_ADDSTRING, 0, (LPARAM)"Seconds");
     SendMessageA(m_hBucketUnit, CB_ADDSTRING, 0, (LPARAM)"Minutes");
@@ -159,12 +167,9 @@ void LogAnalyzerDialog::createControls() {
     SendMessageA(m_hTabs, TCM_INSERTITEMA, 0, (LPARAM)&ti);
     ti.pszText = const_cast<char*>("Patterns");
     SendMessageA(m_hTabs, TCM_INSERTITEMA, 1, (LPARAM)&ti);
-    ti.pszText = const_cast<char*>("Exceptions");
-    SendMessageA(m_hTabs, TCM_INSERTITEMA, 2, (LPARAM)&ti);
 
     setupLogsColumns();
     setupPatternsColumns();
-    setupExceptionsColumns();
 
     // Disable visual theming so Notepad++ dark mode cannot override our colours.
     // "Explorer" style gives the modern look; empty strings disable dark-mode hooks.
@@ -176,7 +181,33 @@ void LogAnalyzerDialog::createControls() {
     };
     fixListColors(m_hLogsList);
     fixListColors(m_hPatternsList);
-    fixListColors(m_hExceptionsList);
+
+    // Subclass to force a white background even when Notepad++ dark mode
+    // re-themes the controls after initialisation.
+    SetWindowSubclass(m_hLogsList,     ListWhiteBkSubclass, 1, 0);
+    SetWindowSubclass(m_hPatternsList, ListWhiteBkSubclass, 1, 0);
+
+    // Re-assert white now that the intercepting subclass is in place
+    // (this corrects any dark colour NPP applied before our subclass).
+    ListView_SetBkColor    (m_hLogsList,     RGB(255, 255, 255));
+    ListView_SetTextBkColor(m_hLogsList,     RGB(255, 255, 255));
+    ListView_SetBkColor    (m_hPatternsList, RGB(255, 255, 255));
+    ListView_SetTextBkColor(m_hPatternsList, RGB(255, 255, 255));
+
+    // Determinate progress bar (0-100%) — on top of the histogram, hidden until busy.
+    m_hProgress = CreateWindowExA(
+        0, PROGRESS_CLASSA, "",
+        WS_CHILD | PBS_SMOOTH,
+        0, 0, 10, 10, _hSelf, nullptr, _hInst, nullptr);
+    SendMessage(m_hProgress, PBM_SETRANGE32, 0, 100);
+
+    // Percentage label shown above the progress bar while busy.
+    m_hProgressLabel = CreateWindowExA(
+        0, "STATIC", "",
+        WS_CHILD | SS_CENTER,
+        0, 0, 10, 10, _hSelf, nullptr, _hInst, nullptr);
+    SendMessage(m_hProgressLabel, WM_SETFONT,
+                (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
 
     showListView(0);
     updateStatus("Ready - browse to a log folder and click Process.");
@@ -193,9 +224,33 @@ static void insertColA(HWND lv, int idx, const char* text, int cx, int fmt = LVC
     SendMessageA(lv, LVM_INSERTCOLUMNA, (WPARAM)idx, (LPARAM)&c);
 }
 
+// Forces a white background regardless of Notepad++ dark-mode subclassing.
+// NPP repeatedly re-sets the ListView background to a dark colour via
+// LVM_SETBKCOLOR/LVM_SETTEXTBKCOLOR; we intercept those and force white so the
+// list always paints light.
+static LRESULT CALLBACK ListWhiteBkSubclass(HWND h, UINT msg, WPARAM w, LPARAM l,
+                                            UINT_PTR /*id*/, DWORD_PTR /*ref*/) {
+    switch (msg) {
+    case WM_ERASEBKGND: {
+        HDC dc = (HDC)w;
+        RECT rc; GetClientRect(h, &rc);
+        FillRect(dc, &rc, (HBRUSH)GetStockObject(WHITE_BRUSH));
+        return 1;
+    }
+    case LVM_SETBKCOLOR:
+    case LVM_SETTEXTBKCOLOR:
+        // Ignore whatever colour is requested — always white.
+        return DefSubclassProc(h, msg, w, (LPARAM)RGB(255, 255, 255));
+    case LVM_SETTEXTCOLOR:
+        return DefSubclassProc(h, msg, w, (LPARAM)RGB(20, 20, 20));
+    }
+    return DefSubclassProc(h, msg, w, l);
+}
+
 void LogAnalyzerDialog::setupLogsColumns() {
+    // No double-buffer: we want our WM_ERASEBKGND subclass to control the fill.
     ListView_SetExtendedListViewStyle(m_hLogsList,
-        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
     insertColA(m_hLogsList, 0, "#",         36, LVCFMT_RIGHT);
     insertColA(m_hLogsList, 1, "Timestamp", 140);
     insertColA(m_hLogsList, 2, "Level",      52);
@@ -205,20 +260,11 @@ void LogAnalyzerDialog::setupLogsColumns() {
 
 void LogAnalyzerDialog::setupPatternsColumns() {
     ListView_SetExtendedListViewStyle(m_hPatternsList,
-        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
     insertColA(m_hPatternsList, 0, "Count",      60, LVCFMT_RIGHT);
     insertColA(m_hPatternsList, 1, "Pattern",   380);
     insertColA(m_hPatternsList, 2, "First Seen",140);
     insertColA(m_hPatternsList, 3, "Last Seen", 140);
-}
-
-void LogAnalyzerDialog::setupExceptionsColumns() {
-    ListView_SetExtendedListViewStyle(m_hExceptionsList,
-        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
-    insertColA(m_hExceptionsList, 0, "Count",      60, LVCFMT_RIGHT);
-    insertColA(m_hExceptionsList, 1, "Type",       200);
-    insertColA(m_hExceptionsList, 2, "Message",    300);
-    insertColA(m_hExceptionsList, 3, "First Seen", 140);
 }
 
 // ── Event handlers ────────────────────────────────────────────────────────────
@@ -237,12 +283,13 @@ void LogAnalyzerDialog::onBrowse() {
 }
 
 void LogAnalyzerDialog::onProcess() {
-    if (m_processing) return;
+    if (m_processing || m_analyzing) return;
 
     LogConfig cfg;
     cfg.folderPath      = getCtrlText(m_hFolder);
     cfg.regexPattern    = getCtrlText(m_hRegex);
     cfg.timestampFormat = getCtrlText(m_hTsFmt);
+    cfg.fileFilter      = getCtrlText(m_hFileFilter);
     cfg.recursive       = isChecked(m_hRecursive);
 
     if (!m_core.configure(cfg)) {
@@ -250,17 +297,20 @@ void LogAnalyzerDialog::onProcess() {
         return;
     }
     m_core.setTimeBucketSize(getBucketSeconds());
-    m_chartWindowOpened = false;
     m_processing        = true;
-    EnableWindow(m_hProcess, FALSE);
 
-    updateStatus("Loading log files...");
+    // Clear the virtual list so it stops requesting rows while data changes.
+    m_filteredIndices.clear();
+    ListView_SetItemCountEx(m_hLogsList, 0, 0);
 
-    // Process on background thread; WM_LOGANALYZER_DONE will fire when done
+    setBusy(true, "Reading and parsing log files...");
+
+    // Read + parse + index happens on a worker thread.
+    // WM_LOGANALYZER_DONE fires on the UI thread when finished.
     m_core.processLogsAsync(_hSelf, [this](int pct, const std::string& s) {
-        // Post progress to UI thread (safe cross-thread)
-        std::string* msg = new std::string(std::to_string(pct) + "% — " + s);
-        PostMessage(_hSelf, WM_APP + 11, 0, (LPARAM)msg);
+        // wParam = percentage, lParam = status text (freed by the handler)
+        std::string* msg = new std::string(s);
+        PostMessage(_hSelf, WM_LA_PROGRESS, (WPARAM)pct, (LPARAM)msg);
         return true;
     });
 }
@@ -270,12 +320,16 @@ void LogAnalyzerDialog::onFilter() {
         updateStatus("No logs loaded - click Process first.");
         return;
     }
-    applyFilter();
+    startAnalyze();
 }
 
-void LogAnalyzerDialog::applyFilter() {
-    FilterCriteria criteria;
+// Builds filter criteria on the UI thread, then runs the heavy analysis
+// (filter + aggregate + patterns + exceptions) on a background thread so the
+// Notepad++ window stays responsive.
+void LogAnalyzerDialog::startAnalyze() {
+    if (m_analyzing) return;
 
+    FilterCriteria criteria;
     int levelIdx = (int)SendMessage(m_hLevelCombo, CB_GETCURSEL, 0, 0);
     criteria.level = (levelIdx == 0) ? -1 : (levelIdx - 1);
 
@@ -285,29 +339,101 @@ void LogAnalyzerDialog::applyFilter() {
         std::string w;
         while (iss >> w) criteria.keywords.push_back(w);
     }
-
     criteria.searchText    = getCtrlText(m_hSearch);
     criteria.searchIsRegex = isChecked(m_hSearchRegex);
 
-    // Apply histogram time selection
     if (m_histSel.active) {
         criteria.startTime = m_histSel.startTime;
         criteria.endTime   = m_histSel.endTime;
     }
 
-    m_filteredIndices = m_core.filterLogs(criteria);
-    m_aggregation     = m_core.aggregate(m_filteredIndices);
+    m_pendingCriteria = criteria;
+    m_analyzing       = true;
 
-    // Run pattern & exception analysis (quick enough synchronously for <500k entries)
-    m_core.analyzePatterns(m_filteredIndices);
-    m_core.analyzeExceptions(m_filteredIndices);
+    // Stop the virtual list from reading m_filteredIndices while the worker
+    // rewrites it.
+    ListView_SetItemCountEx(m_hLogsList, 0, 0);
+
+    setBusy(true, "Analyzing logs...");
+
+    if (m_hAnalyzeThread) { CloseHandle(m_hAnalyzeThread); m_hAnalyzeThread = nullptr; }
+    m_hAnalyzeThread = CreateThread(nullptr, 0, analyzeThreadProc, this, 0, nullptr);
+}
+
+DWORD WINAPI LogAnalyzerDialog::analyzeThreadProc(LPVOID param) {
+    reinterpret_cast<LogAnalyzerDialog*>(param)->analyzeWorkerBody();
+    return 0;
+}
+
+void LogAnalyzerDialog::analyzeWorkerBody() {
+    // All heavy work — runs OFF the UI thread.
+    // Post coarse milestone percentages so the bar keeps advancing.
+    auto post = [this](int pct, const char* text) {
+        PostMessage(_hSelf, WM_LA_PROGRESS, (WPARAM)pct, (LPARAM)new std::string(text));
+    };
+
+    post(20, "Filtering...");
+    m_filteredIndices = m_core.filterLogs(m_pendingCriteria);
+
+    post(40, "Aggregating...");
+    m_aggregation = m_core.aggregate(m_filteredIndices);
+
+    // Pattern detection is the slow phase — map its internal 0-100 progress
+    // onto the 70-99% range so the bar keeps moving.
+    m_core.analyzePatterns(m_filteredIndices, [this](int p) {
+        int overall = 70 + (p * 29) / 100;          // 70 -> 99
+        PostMessage(_hSelf, WM_LA_PROGRESS, (WPARAM)overall,
+                    (LPARAM)new std::string("Detecting patterns..."));
+    });
+
+    post(100, "Rendering...");
+    PostMessage(_hSelf, WM_LA_ANALYZED, 0, 0);
+}
+
+void LogAnalyzerDialog::onAnalyzeDone() {
+    m_analyzing = false;
+    if (m_hAnalyzeThread) { CloseHandle(m_hAnalyzeThread); m_hAnalyzeThread = nullptr; }
 
     refreshLogsVirtualList();
     populatePatternsTab();
-    populateExceptionsTab();
     updateHistogram();
     updateStatus();
-    generateBrowserChart();
+
+    setBusy(false);
+}
+
+// Show / hide the determinate progress bar and toggle the action buttons.
+void LogAnalyzerDialog::setBusy(bool busy, const std::string& msg) {
+    if (!msg.empty()) updateStatus(msg);
+
+    EnableWindow(m_hProcess, busy ? FALSE : TRUE);
+    EnableWindow(m_hFilter,  busy ? FALSE : TRUE);
+
+    if (m_hProgress) {
+        if (busy) {
+            // Position the bar across the middle of the histogram area.
+            RECT hr; GetWindowRect(m_hHistogram, &hr);
+            MapWindowPoints(HWND_DESKTOP, _hSelf, reinterpret_cast<POINT*>(&hr), 2);
+            int areaW = hr.right - hr.left;
+            int areaH = hr.bottom - hr.top;
+            int barW  = areaW / 2;
+            int barH  = 20;
+            int x = hr.left + (areaW - barW) / 2;
+            int y = hr.top  + (areaH - barH) / 2;
+
+            // Label sits just above the bar
+            if (m_hProgressLabel) {
+                SetWindowPos(m_hProgressLabel, HWND_TOP,
+                             hr.left + 8, y - 22, areaW - 16, 18, SWP_SHOWWINDOW);
+                SetWindowTextA(m_hProgressLabel, "0%");
+            }
+            SetWindowPos(m_hProgress, HWND_TOP, x, y, barW, barH, SWP_SHOWWINDOW);
+            SendMessage(m_hProgress, PBM_SETPOS, 0, 0);
+        } else {
+            ShowWindow(m_hProgress, SW_HIDE);
+            if (m_hProgressLabel) ShowWindow(m_hProgressLabel, SW_HIDE);
+        }
+    }
 }
 
 // ── Virtual log list ──────────────────────────────────────────────────────────
@@ -385,40 +511,6 @@ void LogAnalyzerDialog::populatePatternsTab() {
     InvalidateRect(m_hPatternsList, NULL, TRUE);
 }
 
-// ── Exceptions tab ────────────────────────────────────────────────────────────
-
-void LogAnalyzerDialog::populateExceptionsTab() {
-    const auto& excs = m_core.getExceptions();
-    SendMessage(m_hExceptionsList, WM_SETREDRAW, FALSE, 0);
-    ListView_DeleteAllItems(m_hExceptionsList);
-
-    int row = 0;
-    for (const auto& ex : excs) {
-        std::string countStr = std::to_string(ex.count);
-
-        LVITEMA lvi = {};
-        lvi.mask    = LVIF_TEXT;
-        lvi.iItem   = row;
-        lvi.pszText = const_cast<char*>(countStr.c_str());
-        SendMessageA(m_hExceptionsList, LVM_INSERTITEMA, 0, (LPARAM)&lvi);
-
-        auto setSubA = [&](int col, const std::string& t) {
-            LVITEMA si = {}; si.iSubItem = col;
-            si.pszText = const_cast<char*>(t.c_str());
-            SendMessageA(m_hExceptionsList, LVM_SETITEMTEXTA, (WPARAM)row, (LPARAM)&si);
-        };
-        setSubA(1, ex.exceptionType);
-        std::string msg = ex.message.size() > 100 ? ex.message.substr(0, 100) + "..." : ex.message;
-        setSubA(2, msg);
-        setSubA(3, fmtTime(ex.firstSeen));
-        row++;
-        if (row >= 2000) break;
-    }
-
-    SendMessage(m_hExceptionsList, WM_SETREDRAW, TRUE, 0);
-    InvalidateRect(m_hExceptionsList, NULL, TRUE);
-}
-
 // ── Histogram ─────────────────────────────────────────────────────────────────
 
 void LogAnalyzerDialog::updateHistogram() {
@@ -428,8 +520,8 @@ void LogAnalyzerDialog::updateHistogram() {
 
 void LogAnalyzerDialog::onHistogramRange() {
     m_histSel = HistogramControl::getSelection(m_hHistogram);
-    // Re-apply filter with the new time window
-    if (m_core.getTotalLogCount() > 0) applyFilter();
+    // Re-run analysis with the new time window (off the UI thread)
+    if (m_core.getTotalLogCount() > 0) startAnalyze();
 }
 
 // ── Status bar ────────────────────────────────────────────────────────────────
@@ -523,23 +615,6 @@ void LogAnalyzerDialog::onPatternsDoubleClick(int itemIdx) {
     showPatternDetail(itemIdx);
 }
 
-void LogAnalyzerDialog::showExceptionDetail(int exIdx) {
-    const auto& excs = m_core.getExceptions();
-    if (exIdx < 0 || exIdx >= (int)excs.size()) return;
-    const LogException& ex = excs[exIdx];
-    std::string info = "Type: " + ex.exceptionType
-                     + "\nMessage: " + ex.message
-                     + "\nOccurrences: " + std::to_string(ex.count)
-                     + "\nFirst seen: " + fmtTime(ex.firstSeen)
-                     + "\nLast seen:  " + fmtTime(ex.lastSeen)
-                     + "\n\nStack trace:\n" + ex.stackTrace;
-    MessageBoxA(_hSelf, info.c_str(), "Exception Detail", MB_OK);
-}
-
-void LogAnalyzerDialog::onExceptionsDoubleClick(int itemIdx) {
-    showExceptionDetail(itemIdx);
-}
-
 // ── Column sort (logs tab) ────────────────────────────────────────────────────
 
 void LogAnalyzerDialog::onColumnClick(int col) {
@@ -617,28 +692,6 @@ void LogAnalyzerDialog::onContextMenu(HWND hList, POINT pt) {
     }
 }
 
-// ── Browser chart ─────────────────────────────────────────────────────────────
-
-void LogAnalyzerDialog::generateBrowserChart() {
-    std::string html = ChartTemplate::generateHTML(
-        ChartGenerator::generateLevelDataJson(m_aggregation),
-        ChartGenerator::generateTimelineDataJson(m_aggregation));
-
-    char tmpDir[MAX_PATH];
-    GetTempPathA(MAX_PATH, tmpDir);
-    std::string path = std::string(tmpDir) + "LogAnalyzer_Charts.html";
-
-    std::ofstream f(path);
-    if (!f.is_open()) return;
-    f << html;
-    f.close();
-
-    if (!m_chartWindowOpened) {
-        HINSTANCE r = ShellExecuteA(NULL, "open", path.c_str(), NULL, NULL, SW_SHOWNORMAL);
-        if ((INT_PTR)r > 32) m_chartWindowOpened = true;
-    }
-}
-
 // ── Layout / resize ───────────────────────────────────────────────────────────
 
 void LogAnalyzerDialog::onResize(int W, int H) {
@@ -685,7 +738,6 @@ void LogAnalyzerDialog::onResize(int W, int H) {
 
     move(m_hLogsList,       M, listY, W - M * 2, listH);
     move(m_hPatternsList,   M, listY, W - M * 2, listH);
-    move(m_hExceptionsList, M, listY, W - M * 2, listH);
 
     // Status bar – pin to bottom
     move(m_hStatus, M, H - STATUS_H - 2, W - M * 2, STATUS_H);
@@ -712,28 +764,43 @@ INT_PTR CALLBACK LogAnalyzerDialog::run_dlgProc(UINT message, WPARAM wParam, LPA
         }
         break;
 
-    // Progress update from background thread
-    case WM_APP + 11: {
+    // Progress update from a background thread:
+    //   wParam = percentage (0-100), lParam = std::string* status text
+    case WM_LA_PROGRESS: {
+        int pct = (int)wParam;
+        if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+        if (m_hProgress) SendMessage(m_hProgress, PBM_SETPOS, (WPARAM)pct, 0);
+
         std::string* msg = reinterpret_cast<std::string*>(lParam);
-        if (msg) { updateStatus(*msg); delete msg; }
+        std::ostringstream oss;
+        oss << pct << "%";
+        if (msg && !msg->empty()) oss << " - " << *msg;
+
+        // Big centered label over the histogram + the bottom status bar
+        if (m_hProgressLabel) SetWindowTextA(m_hProgressLabel, oss.str().c_str());
+        updateStatus(oss.str());
+        delete msg;
         return TRUE;
     }
 
-    // Background processing completed
+    // File reading / parsing / indexing completed (worker thread)
     case WM_LOGANALYZER_DONE: {
         m_processing = false;
-        EnableWindow(m_hProcess, TRUE);
         if (lParam) {
-            applyFilter();
-            std::ostringstream oss;
-            oss << "Loaded " << m_core.getTotalLogCount() << " entries";
-            updateStatus(oss.str());
+            // Heavy filter/pattern/exception analysis runs on its own worker.
+            startAnalyze();
         } else {
+            setBusy(false);
             MessageBoxA(_hSelf, m_core.getLastError().c_str(), "Load Error", MB_ICONERROR | MB_OK);
             updateStatus("Error: " + m_core.getLastError());
         }
         return TRUE;
     }
+
+    // Analysis worker completed
+    case WM_LA_ANALYZED:
+        onAnalyzeDone();
+        return TRUE;
 
     // Histogram drag-select completed
     case WM_HISTOGRAM_RANGE:
@@ -767,7 +834,6 @@ INT_PTR CALLBACK LogAnalyzerDialog::run_dlgProc(UINT message, WPARAM wParam, LPA
             LPNMITEMACTIVATE nmia = reinterpret_cast<LPNMITEMACTIVATE>(lParam);
             if (pnmh->hwndFrom == m_hLogsList)       onLogsDoubleClick(nmia->iItem);
             if (pnmh->hwndFrom == m_hPatternsList)   onPatternsDoubleClick(nmia->iItem);
-            if (pnmh->hwndFrom == m_hExceptionsList) onExceptionsDoubleClick(nmia->iItem);
             return TRUE;
         }
 
@@ -815,14 +881,13 @@ INT_PTR CALLBACK LogAnalyzerDialog::run_dlgProc(UINT message, WPARAM wParam, LPA
         };
         if (m_hLogsList)       repin(m_hLogsList);
         if (m_hPatternsList)   repin(m_hPatternsList);
-        if (m_hExceptionsList) repin(m_hExceptionsList);
         return TRUE;
     }
 
     case WM_CONTEXTMENU: {
         HWND hCtrl = (HWND)wParam;
         POINT pt = { LOWORD(lParam), HIWORD(lParam) };
-        if (hCtrl == m_hLogsList || hCtrl == m_hPatternsList || hCtrl == m_hExceptionsList)
+        if (hCtrl == m_hLogsList || hCtrl == m_hPatternsList)
             onContextMenu(hCtrl, pt);
         return TRUE;
     }
