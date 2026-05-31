@@ -16,6 +16,9 @@
 //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 #include "PluginDefinition.h"
+#include "LogAnalyzer/HistogramControl.h"
+#include <commctrl.h>
+#pragma comment(lib, "comctl32.lib")
 
 extern FuncItem funcItem[nbFunc];
 extern NppData nppData;
@@ -27,9 +30,13 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 
 		switch (reasonForCall)
 		{
-			case DLL_PROCESS_ATTACH:
+			case DLL_PROCESS_ATTACH: {
+				INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES };
+				InitCommonControlsEx(&icc);
+				LogAnalyzer::HistogramControl::registerClass((HINSTANCE)hModule);
 				pluginInit(hModule);
 				break;
+			}
 
 			case DLL_PROCESS_DETACH:
 				pluginCleanUp();

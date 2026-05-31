@@ -31,7 +31,7 @@ void Tokenizer::setFilterStopWords(bool filter) {
 }
 
 bool Tokenizer::isSeparator(char c) {
-    return std::isspace(c) || c == ',' || c == '.' || c == ';' || 
+    return std::isspace(static_cast<unsigned char>(c)) || c == ',' || c == '.' || c == ';' ||
            c == ':' || c == '!' || c == '?' || c == '(' || c == ')' ||
            c == '[' || c == ']' || c == '{' || c == '}' || c == '"' ||
            c == '\'' || c == '/' || c == '\\' || c == '-' || c == '_';
@@ -43,8 +43,8 @@ std::string Tokenizer::normalizeWord(const std::string& word) {
     
     // Convert to lowercase and remove punctuation
     for (unsigned char c : word) {
-        if (std::isalnum(c)) {
-            normalized += static_cast<char>(std::tolower(c));
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            normalized += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         }
     }
     

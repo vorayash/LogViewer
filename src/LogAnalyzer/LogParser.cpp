@@ -66,8 +66,9 @@ time_t LogParser::parseTimestamp(const std::string& timestampStr) {
         if (sscanf_s(timestampStr.c_str(), "%d-%d-%d %d:%d:%d",
                      &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
                      &tm.tm_hour, &tm.tm_min, &tm.tm_sec) == 6) {
-            tm.tm_year -= 1900;  // Years since 1900
-            tm.tm_mon -= 1;      // Months since January
+            tm.tm_year -= 1900;
+            tm.tm_mon -= 1;
+            tm.tm_isdst = -1;
             return mktime(&tm);
         }
     }
@@ -77,8 +78,6 @@ time_t LogParser::parseTimestamp(const std::string& timestampStr) {
         if (sscanf_s(timestampStr.c_str(), "%d/%3s/%d:%d:%d:%d",
                      &tm.tm_mday, month, (unsigned)sizeof(month), &tm.tm_year,
                      &tm.tm_hour, &tm.tm_min, &tm.tm_sec) == 6) {
-            
-            // Convert month string to number
             const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
             for (int i = 0; i < 12; i++) {
@@ -87,8 +86,8 @@ time_t LogParser::parseTimestamp(const std::string& timestampStr) {
                     break;
                 }
             }
-            
             tm.tm_year -= 1900;
+            tm.tm_isdst = -1;
             return mktime(&tm);
         }
     }
@@ -99,6 +98,7 @@ time_t LogParser::parseTimestamp(const std::string& timestampStr) {
                      &tm.tm_hour, &tm.tm_min, &tm.tm_sec) == 6) {
             tm.tm_year -= 1900;
             tm.tm_mon -= 1;
+            tm.tm_isdst = -1;
             return mktime(&tm);
         }
     }

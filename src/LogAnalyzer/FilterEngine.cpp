@@ -1,5 +1,6 @@
 #include "FilterEngine.h"
 #include <algorithm>
+#include <cctype>
 
 namespace LogAnalyzer {
 
@@ -35,17 +36,24 @@ std::unordered_set<int> FilterEngine::filterByKeywords(
         return std::unordered_set<int>();
     }
     
+    // Keyword index stores lowercased tokens, so normalise input to lowercase
+    auto toLower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+        return s;
+    };
+
     // Start with first keyword's results
     std::unordered_set<int> result;
-    auto it = indexes.keywordIndex.find(keywords[0]);
+    auto it = indexes.keywordIndex.find(toLower(keywords[0]));
     if (it != indexes.keywordIndex.end()) {
         result.insert(it->second.begin(), it->second.end());
     }
-    
+
     // Intersect with remaining keywords (AND logic)
     for (size_t i = 1; i < keywords.size(); i++) {
         std::unordered_set<int> keywordResult;
-        auto kit = indexes.keywordIndex.find(keywords[i]);
+        auto kit = indexes.keywordIndex.find(toLower(keywords[i]));
         if (kit != indexes.keywordIndex.end()) {
             keywordResult.insert(kit->second.begin(), kit->second.end());
         }
@@ -165,21 +173,16 @@ AggregationResult FilterEngine::aggregate(
 ) {
     AggregationResult result;
     result.totalLogs = static_cast<int>(filteredIndices.size());
-    
-    // Aggregate by time and level
+
     for (int idx : filteredIndices) {
         if (idx >= 0 && idx < (int)logs.size()) {
             const LogEntry& entry = logs[idx];
-            
-            // Time bucket aggregation
             time_t bucket = getTimeBucket(entry.timestamp, timeBucketSize);
-            result.timelineCounts[bucket]++;
-            
-            // Level aggregation
+            result.timelineBuckets[bucket].add(entry.level);
             result.levelCounts[entry.level]++;
         }
     }
-    
+
     return result;
 }
 
